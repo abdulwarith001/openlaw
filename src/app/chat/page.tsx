@@ -88,12 +88,7 @@ export default function ChatPage() {
     }
   }, [messages]);
 
-  // Show paywall on first load if no auth
-  useEffect(() => {
-    if (!isInitialLoading && creditInfo?.type === "none") {
-      setIsPaywallOpen(true);
-    }
-  }, [isInitialLoading, creditInfo?.type]);
+
 
   const handleSendMessage = async (content: string) => {
     const userMessage: Message = { role: "user", content };
