@@ -10,7 +10,11 @@ interface LogoProps {
 
 export const Logo: React.FC<LogoProps> = ({ className, size = 40 }) => {
   return (
-    <div className={`relative flex items-center justify-center ${className}`}>
+    <div 
+      className={`relative flex items-center justify-center ${className}`}
+      role="img"
+      aria-label="OpenLaw Logo"
+    >
       <motion.svg
         width={size}
         height={size}

@@ -245,7 +245,7 @@ export default function LandingPage() {
             <motion.div variants={itemVariants} className="mt-12 md:mt-20 relative px-2 md:px-4">
               <div className="max-w-5xl mx-auto min-h-[400px] md:aspect-video rounded-3xl overflow-hidden border border-white/10 bg-surface shadow-[0_0_50px_rgba(0,0,0,0.5)] relative">
                 {/* Decorative UI elements for the mockup */}
-                <div className="absolute top-0 left-0 right-0 h-10 md:h-12 border-b border-border/40 flex items-start px-4 md:px-6 gap-2 bg-[#1E1C17] z-20">
+                <div className="absolute top-0 left-0 right-0 h-10 md:h-12 border-b border-border/40 flex items-start px-4 pt-4 md:px-6 gap-2 bg-[#1E1C17] z-20">
                   <div className="flex gap-1.5">
                     <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-red-400/20" />
                     <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-yellow-400/20" />
@@ -262,7 +262,7 @@ export default function LandingPage() {
                     transition={{ delay: 1, duration: 0.5 }}
                     className="self-end max-w-[90%] md:max-w-[80%] flex flex-col items-end gap-2"
                   >
-                    <div className="bg-primary/10 border border-primary/20 px-4 md:px-5 py-2 md:py-3 rounded-2xl rounded-tr-sm text-xs md:text-sm text-foreground">
+                    <div className="bg-primary/10 border border-primary/20 px-4 text-right md:px-5 py-2 md:py-3 rounded-2xl rounded-tr-sm text-xs md:text-sm text-foreground">
                       What are my rights regarding personal liberty under the
                       Nigerian Constitution?
                     </div>
@@ -308,7 +308,7 @@ export default function LandingPage() {
                     Ask anything about the Nigerian Constitution...
                   </span>
                   <div className="ml-auto p-1.5 md:p-2 rounded-full bg-primary shadow-sm hover:scale-110 transition-transform cursor-pointer">
-                    <Send size={14} className="md:size-16 text-black" />
+                    <Send size={14} className="md:size-4 text-black" />
                   </div>
                 </div>
               </div>
