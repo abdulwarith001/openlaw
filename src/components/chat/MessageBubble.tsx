@@ -36,8 +36,6 @@ export const MessageBubble = ({
   const isAssistant = message.role === "assistant";
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingTTS, setIsLoadingTTS] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [charsPerSec, setCharsPerSec] = useState(18); // Default estimate
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const cleanTextForTTS = (text: string) => {
@@ -45,8 +43,8 @@ export const MessageBubble = ({
       .replace(/###/g, "")
       .replace(/\*\*/g, "")
       .replace(/>/g, "")
-      .replace(/\[Chapter.*\]/g, "") // Remove citations
-      .replace(/\n\n/g, ". ") // Replace paragraph breaks with full stops for better pacing
+      .replace(/\[Chapter.*\]/g, "")
+      .replace(/\n\n/g, ". ")
       .trim();
   };
 
@@ -54,7 +52,6 @@ export const MessageBubble = ({
     if (isPlaying) {
       audioRef.current?.pause();
       setIsPlaying(false);
-      setCurrentTime(0);
       return;
     }
 
@@ -79,20 +76,8 @@ export const MessageBubble = ({
         audioRef.current = new Audio(url);
       }
 
-      audioRef.current.onloadedmetadata = () => {
-        if (audioRef.current && audioRef.current.duration > 0) {
-          const realSpeed = cleanText.length / audioRef.current.duration;
-          setCharsPerSec(realSpeed);
-        }
-      };
-
-      audioRef.current.ontimeupdate = () => {
-        if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
-      };
-
       audioRef.current.onended = () => {
         setIsPlaying(false);
-        setCurrentTime(0);
       };
 
       audioRef.current.play();
@@ -102,65 +87,6 @@ export const MessageBubble = ({
     } finally {
       setIsLoadingTTS(false);
     }
-  };
-
-  // Logic for word highlighting
-  let globalCharCounter = 0;
-  const renderHighlightedWords = (text: string) => {
-    if (!isPlaying) return text;
-    const activeCharIndex = currentTime * charsPerSec;
-
-    // Split by words but maintain the mapping to "speakable" content
-    const words = text.split(/(\s+)/);
-
-    return words.map((word, i) => {
-      // Only count characters that YarnGPT would actually speak
-      const speakableWord = word
-        .replace(/[#*>[\]]/g, "") // Crude check for markdown symbols
-        .trim();
-
-      const start = globalCharCounter;
-      if (speakableWord.length > 0) {
-        globalCharCounter += word.length;
-      } else {
-        // Spaces or symbols don't increment the global counter in the same way for TTS
-        globalCharCounter += word.length;
-      }
-
-      const isHighlighted =
-        isAssistant &&
-        isPlaying &&
-        activeCharIndex >= start &&
-        activeCharIndex < globalCharCounter &&
-        speakableWord.length > 0;
-
-      return (
-        <span
-          key={i}
-          className={cn(
-            "transition-all duration-150 rounded px-0.5",
-            isHighlighted &&
-              "bg-yellow-400 text-black font-extrabold scale-105 inline-block shadow-sm",
-          )}
-        >
-          {word}
-        </span>
-      );
-    });
-  };
-
-  const HighlightedPart = ({ children }: { children: React.ReactNode }) => {
-    if (typeof children === "string")
-      return <>{renderHighlightedWords(children)}</>;
-    if (Array.isArray(children))
-      return (
-        <>
-          {children.map((child, i) => (
-            <HighlightedPart key={i}>{child}</HighlightedPart>
-          ))}
-        </>
-      );
-    return <>{children}</>;
   };
 
   // Suggestion Parsing
@@ -195,9 +121,6 @@ export const MessageBubble = ({
           isAssistant
             ? "rounded-tl-lg bg-surface-raised/50 backdrop-blur-sm border border-white/5 text-foreground shadow-sm hover:border-white/10"
             : "rounded-tr-lg bg-primary text-black shadow-md font-medium selection:bg-black/10",
-          isPlaying &&
-            isAssistant &&
-            "ring-2 ring-primary/20 border-primary/20 shadow-[0_0_20px_rgba(234,179,8,0.05)]",
         )}
       >
         {isAssistant && (
@@ -210,7 +133,7 @@ export const MessageBubble = ({
                 ? "bg-red-500/10 border-red-500/20 text-red-500"
                 : "bg-surface-raised/80 border-white/5 text-muted hover:text-primary hover:border-primary/20 backdrop-blur-md md:opacity-0 md:group-hover:opacity-100",
               isLoadingTTS && "animate-pulse opacity-100",
-              isPlaying && "opacity-100", // Always show if playing
+              isPlaying && "opacity-100",
             )}
             title={isPlaying ? "Stop listening" : "Listen (Nigerian Accent)"}
           >
@@ -227,22 +150,22 @@ export const MessageBubble = ({
           components={{
             p: ({ children }) => (
               <p className="mb-4 last:mb-0 opacity-90">
-                <HighlightedPart>{children}</HighlightedPart>
+                {children}
               </p>
             ),
             h1: ({ children }) => (
               <h1 className="text-xl md:text-2xl font-bold font-heading mb-6 tracking-tight">
-                <HighlightedPart>{children}</HighlightedPart>
+                {children}
               </h1>
             ),
             h2: ({ children }) => (
               <h2 className="text-lg md:text-xl font-bold font-heading mb-4 tracking-tight">
-                <HighlightedPart>{children}</HighlightedPart>
+                {children}
               </h2>
             ),
             h3: ({ children }) => (
               <h3 className="text-base md:text-lg font-bold font-heading mb-3 tracking-tight">
-                <HighlightedPart>{children}</HighlightedPart>
+                {children}
               </h3>
             ),
             ul: ({ children }) => (
@@ -257,7 +180,7 @@ export const MessageBubble = ({
             ),
             li: ({ children }) => (
               <li className="pl-1">
-                <HighlightedPart>{children}</HighlightedPart>
+                {children}
               </li>
             ),
             code: ({ children, className }) => (
@@ -282,7 +205,7 @@ export const MessageBubble = ({
                     : "border-black/20 bg-black/5 text-black/70",
                 )}
               >
-                <HighlightedPart>{children}</HighlightedPart>
+                {children}
               </blockquote>
             ),
             strong: ({ children }) => (
@@ -292,7 +215,7 @@ export const MessageBubble = ({
                   isAssistant ? "text-foreground" : "text-black",
                 )}
               >
-                <HighlightedPart>{children}</HighlightedPart>
+                {children}
               </strong>
             ),
           }}
