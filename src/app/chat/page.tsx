@@ -1,26 +1,33 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Plus,
   Trash2,
-  MoreVertical,
-  MessageSquare,
   ShieldAlert,
-  Menu,
-  X,
-  PlusCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import FingerprintJS from "@fingerprintjs/fingerprintjs";
 import { MessageBubble, type Message } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/ui/Logo";
 import { Dialog } from "@/components/ui/Dialog";
+import { PaywallModal } from "@/components/ui/PaywallModal";
+import { CreditBadge } from "@/components/ui/CreditBadge";
+
+interface CreditInfo {
+  type: "paid" | "free" | "none";
+  credits_remaining?: number;
+  questions_remaining?: number;
+  email?: string;
+  code?: string;
+};
 
 export default function ChatPage() {
   const [isDisclaimerOpen, setIsDisclaimerOpen] = useState(false);
+  const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+  const [paywallStep, setPaywallStep] = useState<"email" | "buy" | "code">("email");
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -29,8 +36,49 @@ export default function ChatPage() {
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [creditInfo, setCreditInfo] = useState<CreditInfo | null>(null);
+  const [fingerprint, setFingerprint] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const latestResponseRef = useRef<HTMLDivElement>(null);
+
+  // Initialize fingerprint
+  useEffect(() => {
+    const initFingerprint = async () => {
+      try {
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        setFingerprint(result.visitorId);
+      } catch (error) {
+        console.error("Fingerprint error:", error);
+        // Fallback: use a random ID stored in sessionStorage
+        let fallback = sessionStorage.getItem("ol_fp");
+        if (!fallback) {
+          fallback = crypto.randomUUID();
+          sessionStorage.setItem("ol_fp", fallback);
+        }
+        setFingerprint(fallback);
+      }
+    };
+    initFingerprint();
+  }, []);
+
+  // Fetch credit info
+  const fetchCredits = useCallback(async () => {
+    try {
+      const res = await fetch("/api/payment/credits");
+      const data = await res.json();
+      setCreditInfo(data);
+    } catch {
+      setCreditInfo({ type: "none" });
+    } finally {
+      setIsInitialLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCredits();
+  }, [fetchCredits]);
 
   useEffect(() => {
     if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
@@ -40,12 +88,18 @@ export default function ChatPage() {
     }
   }, [messages]);
 
+  // Show paywall on first load if no auth
+  useEffect(() => {
+    if (!isInitialLoading && creditInfo?.type === "none") {
+      setIsPaywallOpen(true);
+    }
+  }, [isInitialLoading, creditInfo?.type]);
+
   const handleSendMessage = async (content: string) => {
     const userMessage: Message = { role: "user", content };
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Real AI Response from API
     try {
       const allMessages = [...messages, userMessage];
       const response = await fetch("/api/chat", {
@@ -54,14 +108,27 @@ export default function ChatPage() {
         body: JSON.stringify({ messages: allMessages }),
       });
 
+      const data = await response.json();
+
+      // Handle payment required
+      if (response.status === 402 || response.status === 401) {
+        setIsPaywallOpen(true);
+        // Remove the user message since it wasn't processed
+        setMessages((prev) => prev.slice(0, -1));
+        setIsLoading(false);
+        return;
+      }
+
       if (!response.ok) throw new Error("Failed to fetch response");
 
-      const data = await response.json();
       const assistantMessage: Message = {
         role: "assistant",
         content: data.content,
       };
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Refresh credits after successful message
+      fetchCredits();
     } catch (error) {
       console.error("Chat Error:", error);
       const errorMessage: Message = {
@@ -72,6 +139,17 @@ export default function ChatPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePaywallUnlocked = () => {
+    setIsPaywallOpen(false);
+    setPaywallStep("email");
+    fetchCredits();
+  };
+
+  const handleOpenPaywall = (step: "email" | "buy" | "code" = "email") => {
+    setPaywallStep(step);
+    setIsPaywallOpen(true);
   };
 
   const clearChat = () => {
@@ -105,6 +183,24 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
+            {creditInfo && creditInfo.type !== "none" && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleOpenPaywall("buy")}
+                className="hidden md:flex h-9 px-4 rounded-xl text-black font-bold text-xs gap-2"
+              >
+                Buy Credits
+              </Button>
+            )}
+            {creditInfo && (
+              <CreditBadge
+                type={creditInfo.type}
+                credits={creditInfo.credits_remaining}
+                questionsRemaining={creditInfo.questions_remaining}
+                onClick={() => handleOpenPaywall(creditInfo.type === "paid" ? "buy" : "email")}
+              />
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -188,6 +284,16 @@ export default function ChatPage() {
           </div>
         </div>
       </main>
+
+      {/* Paywall Modal */}
+      <PaywallModal
+        isOpen={isPaywallOpen}
+        onClose={() => setIsPaywallOpen(false)}
+        onUnlocked={handlePaywallUnlocked}
+        fingerprint={fingerprint}
+        initialStep={paywallStep}
+        initialEmail={creditInfo?.email}
+      />
 
       <Dialog
         isOpen={isDisclaimerOpen}

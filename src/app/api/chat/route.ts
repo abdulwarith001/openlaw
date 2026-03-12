@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import constitutionData from "@/data/vector_constitution.json";
 import embeddingsData from "@/data/embeddings.json";
+import { checkAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
+import { chatLimiter, getClientIP } from "@/lib/rate-limit";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+const FREE_LIMIT = Number(process.env.NEXT_PUBLIC_FREE_CREDITS || 0);
 
 const SYSTEM_PROMPT = `You are the "OpenLaw Nigerian Constitutional Assistant". 
 Your sole purpose is to provide accurate, grounded information about the Constitution of the Federal Republic of Nigeria (1999, as amended).
@@ -45,6 +49,65 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Messages are required" }, { status: 400 });
     }
 
+    // --- Rate Limiting ---
+    const ip = getClientIP(req.headers);
+    try {
+      await chatLimiter.consume(ip);
+    } catch {
+      return NextResponse.json(
+        { error: "Too many requests. Please slow down.", code: "RATE_LIMITED" },
+        { status: 429 }
+      );
+    }
+
+    // --- Credit / Session Check ---
+    const auth = await checkAuth();
+
+    if (auth.status === "paid") {
+      if (auth.credits <= 0) {
+        return NextResponse.json(
+          { error: "No credits remaining", code: "PAYMENT_REQUIRED" },
+          { status: 402 }
+        );
+      }
+      // Fix #4: Atomic decrement via postgres RPC to avoid read-modify-write race conditions
+      const { error: rpcError } = await supabase.rpc('decrement_credits', {
+        account_id: auth.id
+      });
+
+      if (rpcError) {
+        return NextResponse.json(
+          { error: "No credits remaining", code: "PAYMENT_REQUIRED" },
+          { status: 402 }
+        );
+      }
+    } else if (auth.status === "free") {
+      if (auth.questionsUsed >= FREE_LIMIT) {
+        return NextResponse.json(
+          { error: "Free questions exhausted", code: "PAYMENT_REQUIRED" },
+          { status: 402 }
+        );
+      }
+      
+      // Fix #4: Atomic increment via postgres RPC
+      const { error: rpcError } = await supabase.rpc('increment_free_questions', {
+        account_id: auth.id,
+        max_free: FREE_LIMIT
+      });
+
+      if (rpcError) {
+        return NextResponse.json(
+          { error: "Free questions exhausted", code: "PAYMENT_REQUIRED" },
+          { status: 402 }
+        );
+      }
+    } else {
+      return NextResponse.json(
+        { error: "Authentication required", code: "AUTH_REQUIRED" },
+        { status: 401 }
+      );
+    }
+
     const latestMessage = messages[messages.length - 1].content;
 
     // Vector Search
@@ -54,14 +117,13 @@ export async function POST(req: NextRequest) {
     });
     const queryEmbedding = embeddingResponse.data[0].embedding;
 
-    // Calculate dot product (cosine similarity since OpenAI embeddings are normalized)
+    // Calculate dot product
     const scoredSections = (embeddingsData as any[]).map((doc: any) => {
       const similarity = doc.embedding.reduce((acc: number, val: number, i: number) => acc + val * queryEmbedding[i], 0);
       return { ...doc, similarity };
     });
 
-    // Sort and get top 5
-    // Sort and get top 8 for better context variety
+    // Sort and get top 8
     const topSections = scoredSections
       .sort((a: any, b: any) => b.similarity - a.similarity)
       .slice(0, 8)
@@ -73,9 +135,7 @@ export async function POST(req: NextRequest) {
       }))
       .filter((s: any) => s.content);
 
-    // Determine if we found enough relevant context
-    const hasContext = topSections.length > 0;
-    const context = hasContext 
+    const context = topSections.length > 0 
       ? topSections.map(s => `SOURCE: [${s.path}${s.title ? " > " + s.title : ""}]\nCONTENT: ${s.content}`).join("\n\n---\n\n")
       : "NO RELEVANT CONSTITUTIONAL SECTIONS FOUND.";
 
@@ -92,7 +152,7 @@ ${context}`;
         ...messages.slice(0, -1),
         { role: "user", content: prompt }
       ],
-      temperature: 0, // Zero temperature for maximum factual consistency
+      temperature: 0,
     });
 
     const content = completion.choices[0].message.content;
